@@ -1,31 +1,75 @@
-// One childhood memory in a single sentence, written for the make.fun
-// bounty "Make the AI Judge Feel Nostalgic: A Childhood Memory".
-// The program prints the entry to stdout and writes it, with no trailing
-// newline, to $MAKEFUN_OUTPUT_DIR/entry.txt (default /output/entry.txt),
-// where the sealed scorer reads it. Stdlib only, no network, deterministic.
+// Entry for "Make the AI Judge Feel Nostalgic: A Childhood Memory".
+// One sentence, one childhood memory: riding home from school on my
+// father's old bicycle. The program assembles the sentence from its
+// parts, checks it against the gate, and writes it to
+// $MAKEFUN_OUTPUT_DIR/entry.txt with no trailing newline.
+// Node 22, standard library only, no network, fully deterministic.
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-const ENTRY =
-  "On summer evenings my grandmother lifted the lid off the rice pot, and the steam fogged my glasses as she filled my chipped blue bowl, while cicadas sang beyond her kitchen window and none of us knew how much I would miss that sound.";
+// How the sentence is glued together: beats separated by ", ", closed by ".".
+const SEPARATOR = ", ";
+const TERMINATOR = ".";
 
-const MAX_CHARS = 280;
+// The memory, in four named beats: the routine, the perch, the senses, the ache.
+// Kept as separate named fragments (not one long literal) so each beat can
+// be read — and revised — on its own.
+const MEMORY_PARTS = {
+  routine:
+    "Every afternoon my father pedalled me home from school on his old bicycle",
+  perch: "and I stood on the back pegs with my arms around his waist",
+  senses:
+    "counting the cracks in the road as the smell of rain on hot asphalt rose around us",
+  ache: "and I never once thought to ask him to ride slower",
+} as const;
 
-// Count in code points so any non-ASCII character counts once, as the
-// sealed scorer counts characters. The gate wants one sentence of 1-280
-// characters, so also insist on a single terminal full stop.
-const charCount = [...ENTRY].length;
-const sentenceCount = (ENTRY.match(/[.!?]/g) ?? []).length;
-if (charCount === 0 || charCount > MAX_CHARS || ENTRY.trim().length === 0) {
-  throw new Error(`entry must be 1-${MAX_CHARS} characters, got ${charCount}`);
+const LIMIT = 280;
+
+// Assemble the entry from the named beats, in story order.
+function composeMemorySentence(parts: typeof MEMORY_PARTS): string {
+  const beatsInOrder = [parts.routine, parts.perch, parts.senses, parts.ache];
+  return beatsInOrder.join(SEPARATOR) + TERMINATOR;
 }
-if (sentenceCount !== 1 || !ENTRY.endsWith(".")) {
-  throw new Error(`entry must be a single sentence, found ${sentenceCount} terminators`);
+
+// Count sentence terminators (., !, ?) anywhere in the text.
+function countSentenceTerminators(text: string): number {
+  return Array.from(text).filter((ch) => ".!?".includes(ch)).length;
 }
 
-const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
-mkdirSync(outDir, { recursive: true });
-// The file gets the bare entry, no trailing newline; stdout may carry one.
-writeFileSync(join(outDir, "entry.txt"), ENTRY, "utf8");
-process.stdout.write(ENTRY + "\n");
+// Gate checks, in a different order from the first draft: sentence shape
+// first (exactly one sentence, ending in a full stop), then whitespace,
+// then length last.
+function validateGate(text: string): void {
+  if (countSentenceTerminators(text) !== 1 || !text.endsWith(TERMINATOR)) {
+    throw new Error("entry must be exactly one sentence ending in a full stop");
+  }
+  if (text.trim() !== text) {
+    throw new Error("entry has leading or trailing whitespace");
+  }
+  const length = Array.from(text).length;
+  if (length < 1 || length > LIMIT) {
+    throw new Error(`entry length ${length} is outside the 1-${LIMIT} range`);
+  }
+}
+
+function writeEntryFile(text: string): void {
+  const dir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+  fs.mkdirSync(dir, { recursive: true });
+  const target = path.join(dir, "entry.txt");
+  fs.writeFileSync(target, text, { encoding: "utf8" });
+  // Read the file back and confirm it holds exactly the entry, nothing more.
+  const written = fs.readFileSync(target, { encoding: "utf8" });
+  if (written !== text) {
+    throw new Error("entry.txt does not match the entry exactly");
+  }
+}
+
+function main(): void {
+  const entry = composeMemorySentence(MEMORY_PARTS);
+  validateGate(entry);
+  writeEntryFile(entry);
+  console.log(entry);
+}
+
+main();
